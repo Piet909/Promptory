@@ -250,7 +250,112 @@ export default function Home() {
           <footer className="main-footer"><span>Promptory <span className="footer-dot">·</span> La tua libreria AI</span><span>{prompts.length} prompt salvati</span></footer>
         </div>
       </section>
-      {categoryManager&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setCategoryManager(false)}}><div className="prompt-modal category-modal"><div className="modal-header"><div><div className="eyebrow">ORGANIZZA LA LIBRERIA</div><h2>Gestisci categorie</h2><p className="muted">Le categorie sono private e associate al tuo account.</p></div><button className="icon-btn" onClick={()=>setCategoryManager(false)}><X size={19}/></button></div><form onSubmit={addCategory} className="category-add-form"><label>Nuova categoria<input value={newCategory} onChange={e=>setNewCategory(e.target.value)} placeholder="Es. Ricerca, Coding, Viaggi..." maxLength={32}/></label><button className="primary-btn" type="submit"><Plus size={16}/> Aggiungi</button></form>{categoryError&&<div className="error-text">{categoryError}</div>}<div className="category-manager-list">{categories.map((name,i)=><div className="category-manager-row" key={name}><span className={`category-dot dot-${i%5}`}/>{renamingCategory===name?<><input className="category-rename-input" value={renameValue} onChange={e=>setRenameValue(e.target.value)} autoFocus/><button className="secondary-btn" onClick={()=>renameCategory(name)} type="button">Salva</button><button className="icon-btn" onClick={()=>{setRenamingCategory(null);setCategoryError("")}} type="button"><X size={16}/></button></>:<><span className="category-manager-name">{name}</span><span className="category-manager-count">{prompts.filter(p=>p.category===name).length} prompt</span>{name!=="Generale"&&<><button className="icon-btn" title="Rinomina" onClick={()=>{setRenamingCategory(name);setRenameValue(name);setCategoryError("")}}><Pencil size={15}/></button><button className="icon-btn category-delete" title="Elimina" onClick={()=>deleteCategory(name)}><Trash2 size={15}/></button>}</></>}</div>)}</div><div className="modal-actions"><button className="secondary-btn" onClick={()=>setCategoryManager(false)}>Chiudi</button></div></div></div>}
+      {categoryManager && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setCategoryManager(false);
+          }}
+        >
+          <div className="prompt-modal category-modal">
+            <div className="modal-header">
+              <div>
+                <div className="eyebrow">ORGANIZZA LA LIBRERIA</div>
+                <h2>Gestisci categorie</h2>
+                <p className="muted">Le categorie sono private e associate al tuo account.</p>
+              </div>
+              <button className="icon-btn" onClick={() => setCategoryManager(false)}>
+                <X size={19} />
+              </button>
+            </div>
+
+            <form onSubmit={addCategory} className="category-add-form">
+              <label>
+                Nuova categoria
+                <input
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  placeholder="Es. Ricerca, Coding, Viaggi..."
+                  maxLength={32}
+                />
+              </label>
+              <button className="primary-btn" type="submit">
+                <Plus size={16} /> Aggiungi
+              </button>
+            </form>
+
+            {categoryError && <div className="error-text">{categoryError}</div>}
+
+            <div className="category-manager-list">
+              {categories.map((name, i) => (
+                <div className="category-manager-row" key={name}>
+                  <span className={`category-dot dot-${i % 5}`} />
+                  {renamingCategory === name ? (
+                    <>
+                      <input
+                        className="category-rename-input"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        autoFocus
+                      />
+                      <button className="secondary-btn" onClick={() => renameCategory(name)} type="button">
+                        Salva
+                      </button>
+                      <button
+                        className="icon-btn"
+                        onClick={() => {
+                          setRenamingCategory(null);
+                          setCategoryError("");
+                        }}
+                        type="button"
+                      >
+                        <X size={16} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="category-manager-name">{name}</span>
+                      <span className="category-manager-count">
+                        {prompts.filter((p) => p.category === name).length} prompt
+                      </span>
+                      {name !== "Generale" && (
+                        <>
+                          <button
+                            className="icon-btn"
+                            title="Rinomina"
+                            onClick={() => {
+                              setRenamingCategory(name);
+                              setRenameValue(name);
+                              setCategoryError("");
+                            }}
+                            type="button"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            className="icon-btn category-delete"
+                            title="Elimina"
+                            onClick={() => deleteCategory(name)}
+                            type="button"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="modal-actions">
+              <button className="secondary-btn" onClick={() => setCategoryManager(false)} type="button">
+                Chiudi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {modal&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setModal(false)}}><div className="prompt-modal"><div className="modal-header"><div><div className="eyebrow">{editing?"MODIFICA":"NUOVO ELEMENTO"}</div><h2>{editing?"Modifica prompt":"Crea un nuovo prompt"}</h2></div><button className="icon-btn" onClick={()=>setModal(false)}><X size={19}/></button></div><form onSubmit={savePrompt}><label>Titolo <input autoFocus placeholder="Es. Analisi competitor..." value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></label><label>Descrizione <input placeholder="A cosa serve questo prompt?" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label><div className="form-two"><label>Categoria <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{categories.map(c=><option key={c}>{c}</option>)}</select></label><label>Piattaforma AI <select value={form.platform} onChange={e=>setForm({...form,platform:e.target.value})}>{platforms.map(p=><option key={p}>{p}</option>)}</select></label></div><label>Contenuto del prompt <textarea rows={8} placeholder="Scrivi qui il tuo prompt. Usa {{VARIABILE}} per i campi da personalizzare..." value={form.content} onChange={e=>setForm({...form,content:e.target.value})}/><span className="field-hint">Suggerimento: usa {"{{NOME_VARIABILE}}"} per rendere riutilizzabile il prompt.</span></label><label>Tag <input placeholder="es. marketing, strategia, email (separati da virgola)" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})}/></label>{formError&&<div className="error-text">{formError}</div>}<div className="modal-actions"><button type="button" className="secondary-btn" onClick={()=>setModal(false)}>Annulla</button><button className="primary-btn" type="submit">{editing?"Salva modifiche":"Salva prompt"} <ArrowUpRight size={16}/></button></div></form></div></div>}
     </main>
   );
