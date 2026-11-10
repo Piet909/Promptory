@@ -22,3 +22,18 @@
 .category-rename-input{min-width:0;flex:1;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);color:var(--text);padding:7px;font:inherit}
 .category-delete:hover{color:#d95362;background:#d9536212}
 @media(max-width:520px){.category-add-form{grid-template-columns:1fr}.category-add-form .primary-btn{width:100%;justify-content:center}.category-manager-count{display:none}}
+
+
+/* Minimal, responsive confirmation dialog */
+.confirm-backdrop{z-index:40}
+.confirm-modal{position:relative;width:min(420px,100%);padding:27px;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 28px 90px #0004;animation:confirm-enter .18s ease-out}
+.confirm-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:12px;background:#d9536214;color:#d95362;margin-bottom:19px}
+.confirm-close{position:absolute;right:16px;top:16px}
+.confirm-modal h2{font:800 20px/1.25 Manrope;letter-spacing:-.6px;color:var(--text);margin:8px 0 9px}
+.confirm-modal>p{font-size:12px;line-height:1.7;color:var(--muted);margin:0;max-width:340px}
+.confirm-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:25px}
+.danger-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #d95362;background:#d95362;color:white;border-radius:8px;padding:10px 14px;font-size:11px;font-weight:650;transition:background .15s,border-color .15s}
+.danger-btn:hover{background:#c84352;border-color:#c84352}
+.danger-btn:disabled,.confirm-actions button:disabled{opacity:.6;cursor:wait}
+@keyframes confirm-enter{from{opacity:0;transform:translateY(7px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(max-width:520px){.confirm-modal{padding:23px 19px;border-radius:14px}.confirm-modal h2{font-size:18px}.confirm-actions{display:grid;grid-template-columns:1fr 1fr}.confirm-actions button{width:100%;min-height:42px}}

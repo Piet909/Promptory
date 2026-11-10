@@ -5,7 +5,7 @@ import {
   Search, Plus, Sparkles, LayoutDashboard, Library, Star, Settings,
   Sun, Moon, Monitor, Copy, Pencil, Trash2, X, ChevronDown, Menu,
   Command, Check, LogOut, LogIn, Tag, WandSparkles, Clock3, Filter,
-  MoreHorizontal, ArrowUpRight, PanelLeftClose, BookOpen, Zap
+  MoreHorizontal, ArrowUpRight, PanelLeftClose, BookOpen, Zap, AlertTriangle
 } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
@@ -54,6 +54,8 @@ export default function Home() {
   const [menuFor,setMenuFor] = useState("");
   const [form,setForm] = useState({title:"",description:"",content:"",category:"Generale",platform:"Universale",tags:""});
   const [formError,setFormError] = useState("");
+  const [confirmDialog,setConfirmDialog] = useState<{title:string;description:string;confirmLabel:string;onConfirm:()=>Promise<void>}|null>(null);
+  const [confirmBusy,setConfirmBusy] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("promptory-theme");
@@ -136,16 +138,25 @@ export default function Home() {
   async function deleteCategory(name:string) {
     if(name === "Generale") { setCategoryError("La categoria Generale è riservata e non può essere eliminata."); return; }
     const count=prompts.filter(p=>p.category===name).length;
-    if(!confirm(`Eliminare la categoria “${name}”? ${count ? `${count} prompt verranno spostati in “Generale”.` : "I prompt non verranno modificati."}`)) return;
-    if(user && supabase) {
-      const {error:promptError}=await supabase.from("prompts").update({category:"Generale"}).eq("user_id",user.id).eq("category",name);
-      if(promptError) { setCategoryError(promptError.message); return; }
-      const {error:catError}=await supabase.from("categories").delete().eq("user_id",user.id).eq("name",name);
-      if(catError) { setCategoryError(catError.message); return; }
-    }
-    setPrompts(prev=>prev.map(p=>p.category===name?{...p,category:"Generale"}:p));
-    setCategories(prev=>prev.filter(c=>c!==name));
-    if(category===name) setCategory("Tutte");
+    setConfirmDialog({
+      title:`Eliminare “${name}”?`,
+      description:count
+        ? `La categoria verrà eliminata e i suoi ${count} ${count===1?"prompt verrà trasferito":"prompt verranno trasferiti"} in “Generale”. Non perderai alcun contenuto.`
+        : "La categoria verrà eliminata. I tuoi prompt non verranno modificati.",
+      confirmLabel:"Elimina categoria",
+      onConfirm:async()=>{
+        if(user && supabase) {
+          const {error:promptError}=await supabase.from("prompts").update({category:"Generale"}).eq("user_id",user.id).eq("category",name);
+          if(promptError) { setCategoryError(promptError.message); return; }
+          const {error:catError}=await supabase.from("categories").delete().eq("user_id",user.id).eq("name",name);
+          if(catError) { setCategoryError(catError.message); return; }
+        }
+        setPrompts(prev=>prev.map(p=>p.category===name?{...p,category:"Generale"}:p));
+        setCategories(prev=>prev.filter(c=>c!==name));
+        if(category===name) setCategory("Tutte");
+        setConfirmDialog(null);
+      }
+    });
   }
 
   async function authenticate(e:React.FormEvent) {
@@ -188,9 +199,27 @@ export default function Home() {
     setModal(false);
   }
   async function removePrompt(p:Prompt) {
-    if(!confirm(`Eliminare "${p.title}"?`)) return;
-    if(user && supabase) { const {error}=await supabase.from("prompts").delete().eq("id",p.id); if(error) {alert(error.message);return;} }
-    setPrompts(prev=>prev.filter(x=>x.id!==p.id)); setMenuFor("");
+    setConfirmDialog({
+      title:"Eliminare questo prompt?",
+      description:`“${p.title}” verrà eliminato definitivamente dalla tua libreria.`,
+      confirmLabel:"Elimina prompt",
+      onConfirm:async()=>{
+        if(user && supabase) {
+          const {error}=await supabase.from("prompts").delete().eq("id",p.id);
+          if(error) { setConfirmDialog(null); alert(error.message); return; }
+        }
+        setPrompts(prev=>prev.filter(x=>x.id!==p.id));
+        setMenuFor("");
+        setConfirmDialog(null);
+      }
+    });
+  }
+
+  async function runConfirmAction() {
+    if(!confirmDialog || confirmBusy) return;
+    setConfirmBusy(true);
+    try { await confirmDialog.onConfirm(); }
+    finally { setConfirmBusy(false); }
   }
   async function toggleFavorite(p:Prompt) {
     const next=!p.is_favorite;
@@ -354,6 +383,21 @@ export default function Home() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {confirmDialog&&(
+        <div className="modal-backdrop confirm-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget&&!confirmBusy)setConfirmDialog(null)}}>
+          <section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-description">
+            <div className="confirm-icon"><AlertTriangle size={21}/></div>
+            <button className="icon-btn confirm-close" type="button" aria-label="Chiudi" disabled={confirmBusy} onClick={()=>setConfirmDialog(null)}><X size={18}/></button>
+            <div className="eyebrow">CONFERMA OPERAZIONE</div>
+            <h2 id="confirm-title">{confirmDialog.title}</h2>
+            <p id="confirm-description">{confirmDialog.description}</p>
+            <div className="confirm-actions">
+              <button className="secondary-btn" type="button" disabled={confirmBusy} onClick={()=>setConfirmDialog(null)}>Annulla</button>
+              <button className="danger-btn" type="button" disabled={confirmBusy} onClick={runConfirmAction}>{confirmBusy?"Eliminazione…":confirmDialog.confirmLabel}<Trash2 size={15}/></button>
+            </div>
+          </section>
         </div>
       )}
       {modal&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setModal(false)}}><div className="prompt-modal"><div className="modal-header"><div><div className="eyebrow">{editing?"MODIFICA":"NUOVO ELEMENTO"}</div><h2>{editing?"Modifica prompt":"Crea un nuovo prompt"}</h2></div><button className="icon-btn" onClick={()=>setModal(false)}><X size={19}/></button></div><form onSubmit={savePrompt}><label>Titolo <input autoFocus placeholder="Es. Analisi competitor..." value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></label><label>Descrizione <input placeholder="A cosa serve questo prompt?" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label><div className="form-two"><label>Categoria <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{categories.map(c=><option key={c}>{c}</option>)}</select></label><label>Piattaforma AI <select value={form.platform} onChange={e=>setForm({...form,platform:e.target.value})}>{platforms.map(p=><option key={p}>{p}</option>)}</select></label></div><label>Contenuto del prompt <textarea rows={8} placeholder="Scrivi qui il tuo prompt. Usa {{VARIABILE}} per i campi da personalizzare..." value={form.content} onChange={e=>setForm({...form,content:e.target.value})}/><span className="field-hint">Suggerimento: usa {"{{NOME_VARIABILE}}"} per rendere riutilizzabile il prompt.</span></label><label>Tag <input placeholder="es. marketing, strategia, email (separati da virgola)" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})}/></label>{formError&&<div className="error-text">{formError}</div>}<div className="modal-actions"><button type="button" className="secondary-btn" onClick={()=>setModal(false)}>Annulla</button><button className="primary-btn" type="submit">{editing?"Salva modifiche":"Salva prompt"} <ArrowUpRight size={16}/></button></div></form></div></div>}
