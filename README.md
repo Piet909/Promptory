@@ -61,3 +61,9 @@ A custom domain can be connected from Vercel → Project → Settings → Domain
 - Prompt variables and reusable templates
 - Team workspaces, billing and usage analytics
 - Automated tests, monitoring, privacy policy and terms of service
+
+## Categorie personalizzate
+
+Per abilitare la gestione delle categorie nella versione aggiornata, apri Supabase → SQL Editor, crea una nuova query e incolla il contenuto di `supabase/categories-migration.sql`. Esegui lo script una sola volta. La tabella `categories` usa RLS: ogni account può gestire esclusivamente le proprie categorie.
+
+Dopo aver aggiornato il repository GitHub con questa versione, Vercel avvierà un nuovo deployment. La categoria `Generale` è riservata come destinazione sicura quando si elimina un'altra categoria; i prompt associati vengono spostati in `Generale`, non eliminati.

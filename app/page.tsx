@@ -22,7 +22,7 @@ const starter: Prompt[] = [
   { id:"demo-4", title:"Genera idee per contenuti social", description:"Ideazione di contenuti coerenti con un brand.", content:"Sei un content strategist. Il brand è {{BRAND}}, il pubblico è {{TARGET}} e l'obiettivo è {{OBIETTIVO}}. Genera 10 idee originali, ognuna con hook, formato, messaggio chiave e call to action. Evita cliché e varia gli angoli narrativi.", category:"Marketing", platform:"Universale", tags:["social","idee"], is_favorite:false, usage_count:5, created_at:new Date().toISOString(), updated_at:new Date().toISOString() },
 ];
 
-const categories = ["Tutte","Business","Scrittura","Marketing","Learning","Sviluppo","Creatività","Produttività","Generale"];
+const defaultCategories = ["Business","Scrittura","Marketing","Learning","Sviluppo","Creatività","Produttività","Generale"];
 const platforms = ["Universale","ChatGPT","Gemini","Claude","NotebookLM","Midjourney","Sora","Altro"];
 
 function initials(email: string) { return email?.slice(0,1).toUpperCase() || "P"; }
@@ -31,6 +31,12 @@ export default function Home() {
   const [theme,setTheme] = useState("system");
   const [active,setActive] = useState("all");
   const [category,setCategory] = useState("Tutte");
+  const [categories,setCategories] = useState<string[]>(defaultCategories);
+  const [categoryManager,setCategoryManager] = useState(false);
+  const [newCategory,setNewCategory] = useState("");
+  const [categoryError,setCategoryError] = useState("");
+  const [renamingCategory,setRenamingCategory] = useState<string|null>(null);
+  const [renameValue,setRenameValue] = useState("");
   const [query,setQuery] = useState("");
   const [prompts,setPrompts] = useState<Prompt[]>(starter);
   const [user,setUser] = useState<any>(null);
@@ -71,6 +77,15 @@ export default function Home() {
     supabase.from("prompts").select("*").order("updated_at",{ascending:false}).then(({data,error}) => {
       if(!error && data) setPrompts(data as Prompt[]);
     });
+    (async () => {
+      const { error: seedError } = await supabase.from("categories").upsert(
+        defaultCategories.map(name => ({ user_id: user.id, name })),
+        { onConflict: "user_id,name", ignoreDuplicates: true }
+      );
+      const { data, error } = await supabase.from("categories").select("name").order("name");
+      if(!error && data) setCategories(data.map((item:any) => item.name as string));
+      else if(seedError) console.error("Errore caricamento categorie:", seedError.message);
+    })();
   },[user]);
 
   const visible = useMemo(() => prompts.filter(p => {
@@ -86,6 +101,52 @@ export default function Home() {
     {label:"Preferiti",value:prompts.filter(p=>p.is_favorite).length,icon:Star},
     {label:"Categorie",value:new Set(prompts.map(p=>p.category)).size,icon:Tag},
   ];
+
+  async function addCategory(e:React.FormEvent) {
+    e.preventDefault(); setCategoryError("");
+    const name = newCategory.trim();
+    if(!name) { setCategoryError("Inserisci il nome della categoria."); return; }
+    if(name.length > 32) { setCategoryError("Usa al massimo 32 caratteri."); return; }
+    if(categories.some(c=>c.toLowerCase()===name.toLowerCase())) { setCategoryError("Questa categoria esiste già."); return; }
+    if(user && supabase) {
+      const {error} = await supabase.from("categories").insert({user_id:user.id,name});
+      if(error) { setCategoryError(error.message); return; }
+    }
+    setCategories(prev=>[...prev,name].sort((a,b)=>a.localeCompare(b,"it")));
+    setNewCategory("");
+  }
+
+  async function renameCategory(oldName:string) {
+    const name=renameValue.trim(); setCategoryError("");
+    if(oldName === "Generale") { setCategoryError("La categoria Generale è riservata e non può essere rinominata."); return; }
+    if(!name || name.length>32) { setCategoryError("Inserisci un nome valido (massimo 32 caratteri)."); return; }
+    if(categories.some(c=>c.toLowerCase()===name.toLowerCase() && c!==oldName)) { setCategoryError("Esiste già una categoria con questo nome."); return; }
+    if(user && supabase) {
+      const {error:catError}=await supabase.from("categories").update({name}).eq("user_id",user.id).eq("name",oldName);
+      if(catError) { setCategoryError(catError.message); return; }
+      const {error:promptError}=await supabase.from("prompts").update({category:name}).eq("user_id",user.id).eq("category",oldName);
+      if(promptError) { setCategoryError(promptError.message); return; }
+    }
+    setCategories(prev=>prev.map(c=>c===oldName?name:c).sort((a,b)=>a.localeCompare(b,"it")));
+    setPrompts(prev=>prev.map(p=>p.category===oldName?{...p,category:name}:p));
+    if(category===oldName) setCategory(name);
+    setRenamingCategory(null); setRenameValue("");
+  }
+
+  async function deleteCategory(name:string) {
+    if(name === "Generale") { setCategoryError("La categoria Generale è riservata e non può essere eliminata."); return; }
+    const count=prompts.filter(p=>p.category===name).length;
+    if(!confirm(`Eliminare la categoria “${name}”? ${count ? `${count} prompt verranno spostati in “Generale”.` : "I prompt non verranno modificati."}`)) return;
+    if(user && supabase) {
+      const {error:promptError}=await supabase.from("prompts").update({category:"Generale"}).eq("user_id",user.id).eq("category",name);
+      if(promptError) { setCategoryError(promptError.message); return; }
+      const {error:catError}=await supabase.from("categories").delete().eq("user_id",user.id).eq("name",name);
+      if(catError) { setCategoryError(catError.message); return; }
+    }
+    setPrompts(prev=>prev.map(p=>p.category===name?{...p,category:"Generale"}:p));
+    setCategories(prev=>prev.filter(c=>c!==name));
+    if(category===name) setCategory("Tutte");
+  }
 
   async function authenticate(e:React.FormEvent) {
     e.preventDefault(); setAuthError(""); setAuthMessage(""); setAuthBusy(true);
@@ -174,8 +235,8 @@ export default function Home() {
           <button className={active==="favorites"?"active":""} onClick={()=>{setActive("favorites");setMobileNav(false)}}><Star size={18}/> Preferiti <span className="nav-count">{prompts.filter(p=>p.is_favorite).length}</span></button>
           <button className={active==="recent"?"active":""} onClick={()=>{setActive("recent");setMobileNav(false)}}><Clock3 size={18}/> Recenti</button>
         </nav>
-        <div className="nav-label category-label">CATEGORIE <button onClick={()=>setCategory("Tutte")}>+ Gestisci</button></div>
-        <nav className="category-nav">{categories.slice(1).map((c,i)=><button key={c} className={category===c?"active":""} onClick={()=>{setCategory(category===c?"Tutte":c);setActive("all");setMobileNav(false)}}><span className={`category-dot dot-${i%5}`}/>{c}<span className="nav-count">{prompts.filter(p=>p.category===c).length||""}</span></button>)}</nav>
+        <div className="nav-label category-label">CATEGORIE <button onClick={()=>{setCategoryManager(true);setCategoryError("")}}>+ Gestisci</button></div>
+        <nav className="category-nav">{categories.map((c,i)=><button key={c} className={category===c?"active":""} onClick={()=>{setCategory(category===c?"Tutte":c);setActive("all");setMobileNav(false)}}><span className={`category-dot dot-${i%5}`}/>{c}<span className="nav-count">{prompts.filter(p=>p.category===c).length||""}</span></button>)}</nav>
         <div className="sidebar-bottom"><div className="upgrade-card"><div className="upgrade-icon"><WandSparkles size={17}/></div><strong>La tua creatività, senza limiti.</strong><p>Una libreria ordinata è il primo passo per lavorare meglio con l'AI.</p><span>SPAZIO PERSONALE</span></div><div className="profile-row"><div className="avatar">{initials(user.email)}</div><div className="profile-info"><strong>{user.email?.split("@")[0]}</strong><span>Account personale</span></div><button className="icon-btn" onClick={signOut} title="Esci"><LogOut size={17}/></button></div></div>
       </aside>
       {mobileNav&&<div className="mobile-scrim" onClick={()=>setMobileNav(false)}/>}
@@ -189,7 +250,8 @@ export default function Home() {
           <footer className="main-footer"><span>Promptory <span className="footer-dot">·</span> La tua libreria AI</span><span>{prompts.length} prompt salvati</span></footer>
         </div>
       </section>
-      {modal&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setModal(false)}}><div className="prompt-modal"><div className="modal-header"><div><div className="eyebrow">{editing?"MODIFICA":"NUOVO ELEMENTO"}</div><h2>{editing?"Modifica prompt":"Crea un nuovo prompt"}</h2></div><button className="icon-btn" onClick={()=>setModal(false)}><X size={19}/></button></div><form onSubmit={savePrompt}><label>Titolo <input autoFocus placeholder="Es. Analisi competitor..." value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></label><label>Descrizione <input placeholder="A cosa serve questo prompt?" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label><div className="form-two"><label>Categoria <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{categories.slice(1).map(c=><option key={c}>{c}</option>)}</select></label><label>Piattaforma AI <select value={form.platform} onChange={e=>setForm({...form,platform:e.target.value})}>{platforms.map(p=><option key={p}>{p}</option>)}</select></label></div><label>Contenuto del prompt <textarea rows={8} placeholder="Scrivi qui il tuo prompt. Usa {{VARIABILE}} per i campi da personalizzare..." value={form.content} onChange={e=>setForm({...form,content:e.target.value})}/><span className="field-hint">Suggerimento: usa {"{{NOME_VARIABILE}}"} per rendere riutilizzabile il prompt.</span></label><label>Tag <input placeholder="es. marketing, strategia, email (separati da virgola)" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})}/></label>{formError&&<div className="error-text">{formError}</div>}<div className="modal-actions"><button type="button" className="secondary-btn" onClick={()=>setModal(false)}>Annulla</button><button className="primary-btn" type="submit">{editing?"Salva modifiche":"Salva prompt"} <ArrowUpRight size={16}/></button></div></form></div></div>}
+      {categoryManager&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setCategoryManager(false)}}><div className="prompt-modal category-modal"><div className="modal-header"><div><div className="eyebrow">ORGANIZZA LA LIBRERIA</div><h2>Gestisci categorie</h2><p className="muted">Le categorie sono private e associate al tuo account.</p></div><button className="icon-btn" onClick={()=>setCategoryManager(false)}><X size={19}/></button></div><form onSubmit={addCategory} className="category-add-form"><label>Nuova categoria<input value={newCategory} onChange={e=>setNewCategory(e.target.value)} placeholder="Es. Ricerca, Coding, Viaggi..." maxLength={32}/></label><button className="primary-btn" type="submit"><Plus size={16}/> Aggiungi</button></form>{categoryError&&<div className="error-text">{categoryError}</div>}<div className="category-manager-list">{categories.map((name,i)=><div className="category-manager-row" key={name}><span className={`category-dot dot-${i%5}`}/>{renamingCategory===name?<><input className="category-rename-input" value={renameValue} onChange={e=>setRenameValue(e.target.value)} autoFocus/><button className="secondary-btn" onClick={()=>renameCategory(name)} type="button">Salva</button><button className="icon-btn" onClick={()=>{setRenamingCategory(null);setCategoryError("")}} type="button"><X size={16}/></button></>:<><span className="category-manager-name">{name}</span><span className="category-manager-count">{prompts.filter(p=>p.category===name).length} prompt</span>{name!=="Generale"&&<><button className="icon-btn" title="Rinomina" onClick={()=>{setRenamingCategory(name);setRenameValue(name);setCategoryError("")}}><Pencil size={15}/></button><button className="icon-btn category-delete" title="Elimina" onClick={()=>deleteCategory(name)}><Trash2 size={15}/></button>}</></>}</div>)}</div><div className="modal-actions"><button className="secondary-btn" onClick={()=>setCategoryManager(false)}>Chiudi</button></div></div></div>}
+      {modal&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setModal(false)}}><div className="prompt-modal"><div className="modal-header"><div><div className="eyebrow">{editing?"MODIFICA":"NUOVO ELEMENTO"}</div><h2>{editing?"Modifica prompt":"Crea un nuovo prompt"}</h2></div><button className="icon-btn" onClick={()=>setModal(false)}><X size={19}/></button></div><form onSubmit={savePrompt}><label>Titolo <input autoFocus placeholder="Es. Analisi competitor..." value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></label><label>Descrizione <input placeholder="A cosa serve questo prompt?" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label><div className="form-two"><label>Categoria <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{categories.map(c=><option key={c}>{c}</option>)}</select></label><label>Piattaforma AI <select value={form.platform} onChange={e=>setForm({...form,platform:e.target.value})}>{platforms.map(p=><option key={p}>{p}</option>)}</select></label></div><label>Contenuto del prompt <textarea rows={8} placeholder="Scrivi qui il tuo prompt. Usa {{VARIABILE}} per i campi da personalizzare..." value={form.content} onChange={e=>setForm({...form,content:e.target.value})}/><span className="field-hint">Suggerimento: usa {"{{NOME_VARIABILE}}"} per rendere riutilizzabile il prompt.</span></label><label>Tag <input placeholder="es. marketing, strategia, email (separati da virgola)" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})}/></label>{formError&&<div className="error-text">{formError}</div>}<div className="modal-actions"><button type="button" className="secondary-btn" onClick={()=>setModal(false)}>Annulla</button><button className="primary-btn" type="submit">{editing?"Salva modifiche":"Salva prompt"} <ArrowUpRight size={16}/></button></div></form></div></div>}
     </main>
   );
 }
