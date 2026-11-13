@@ -12,7 +12,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 type Platform = {
   id: string; user_id?: string; name: string; description: string | null;
   url: string | null; icon: string | null; color: string | null;
-  is_archived: boolean; is_system?: boolean; created_at?: string;
+  is_archived: boolean; is_system?: boolean; system_key?: string | null; created_at?: string;
 };
 
 type Prompt = {
@@ -29,10 +29,18 @@ const starter: Prompt[] = [
 ];
 
 const defaultCategories = ["Business","Scrittura","Marketing","Learning","Sviluppo","Creatività","Produttività","Generale"];
-const systemPlatforms: Platform[] = ["Universale","ChatGPT","Gemini","Claude","NotebookLM","Midjourney","Sora","Altro"].map((name) => ({
-  id: `system-${name.toLowerCase()}`, name, description: "Piattaforma predefinita", url: null,
-  icon: null, color: null, is_archived: false, is_system: true
-}));
+// Piattaforme incluse in Promptory. Le impostazioni sono salvate per utente su Supabase,
+// così anche quelle predefinite possono essere personalizzate senza perdere i prompt collegati.
+const systemPlatformDefaults: Platform[] = [
+  {id:"system-universale",system_key:"universale",name:"Universale",description:"Prompt utilizzabile con qualsiasi assistente AI",url:"https://chatgpt.com",icon:"🌐",color:"#64748b",is_archived:false,is_system:true},
+  {id:"system-chatgpt",system_key:"chatgpt",name:"ChatGPT",description:"Assistente AI di OpenAI",url:"https://chatgpt.com",icon:"✳️",color:"#10a37f",is_archived:false,is_system:true},
+  {id:"system-gemini",system_key:"gemini",name:"Gemini",description:"Assistente AI di Google",url:"https://gemini.google.com",icon:"✦",color:"#4285f4",is_archived:false,is_system:true},
+  {id:"system-claude",system_key:"claude",name:"Claude",description:"Assistente AI di Anthropic",url:"https://claude.ai",icon:"✳",color:"#c47b55",is_archived:false,is_system:true},
+  {id:"system-notebooklm",system_key:"notebooklm",name:"NotebookLM",description:"Assistente di ricerca e sintesi basato sulle tue fonti",url:"https://notebooklm.google.com",icon:"📚",color:"#6478d3",is_archived:false,is_system:true},
+  {id:"system-midjourney",system_key:"midjourney",name:"Midjourney",description:"Generazione di immagini con AI",url:"https://www.midjourney.com",icon:"🌌",color:"#5865f2",is_archived:false,is_system:true},
+  {id:"system-sora",system_key:"sora",name:"Sora",description:"Generazione video con AI",url:"https://sora.com",icon:"🎬",color:"#171717",is_archived:false,is_system:true},
+  {id:"system-altro",system_key:"altro",name:"Altro",description:"Piattaforma generica per strumenti non presenti nell'elenco",url:null,icon:"＋",color:"#94a3b8",is_archived:false,is_system:true}
+];
 
 function initials(email: string) { return email?.slice(0,1).toUpperCase() || "P"; }
 
@@ -109,12 +117,15 @@ export default function Home() {
       if(!error && data) setPrompts(data as Prompt[]);
     });
     (async () => {
+      // Crea una sola volta le piattaforme di sistema per questo utente.
+      // system_key resta stabile anche se l'utente rinomina una piattaforma.
+      const seedRows = systemPlatformDefaults.map(({id, ...platform}) => ({...platform,user_id:user.id}));
+      const {error: seedPlatformError} = await supabase.from("ai_platforms").upsert(seedRows,{onConflict:"user_id,system_key",ignoreDuplicates:true});
+      if (seedPlatformError) console.error("Errore inizializzazione piattaforme predefinite:",seedPlatformError.message);
       const { data: platformData, error: platformLoadError } = await supabase
         .from("ai_platforms").select("*").order("name");
       if (!platformLoadError && platformData) setCustomPlatforms(platformData as Platform[]);
-      else if (platformLoadError && !platformLoadError.message.toLowerCase().includes("does not exist")) {
-        console.error("Errore caricamento piattaforme:", platformLoadError.message);
-      }
+      else if (platformLoadError) console.error("Errore caricamento piattaforme:", platformLoadError.message);
     })();
     (async () => {
       const { error: seedError } = await supabase.from("categories").upsert(
@@ -142,7 +153,7 @@ export default function Home() {
   ];
 
   const platformOptions = useMemo(() => {
-    const names = new Set([...systemPlatforms.map(p=>p.name), ...customPlatforms.filter(p=>!p.is_archived).map(p=>p.name)]);
+    const names = new Set([...(customPlatforms.length ? customPlatforms : systemPlatformDefaults).filter(p=>!p.is_archived).map(p=>p.name)]);
     // Keep legacy platform names selectable when editing old prompts.
     prompts.forEach(p => names.add(p.platform));
     return [...names].sort((a,b)=>a.localeCompare(b,"it"));
@@ -326,9 +337,6 @@ export default function Home() {
     setPlatformError("");
     const name = platformForm.name.trim();
     if (!name) { setPlatformError("Il nome della piattaforma è obbligatorio."); return; }
-    if (systemPlatforms.some(p=>p.name.toLowerCase()===name.toLowerCase())) {
-      setPlatformError("Questa piattaforma è già disponibile tra quelle predefinite."); return;
-    }
     if (customPlatforms.some(p=>p.name.toLowerCase()===name.toLowerCase() && p.id!==platformEditing?.id)) {
       setPlatformError("Esiste già una piattaforma con questo nome."); return;
     }
@@ -339,7 +347,9 @@ export default function Home() {
     const payload = {
       name, description: platformForm.description.trim() || null,
       url: platformForm.url.trim() || null, icon: platformForm.icon.trim() || null,
-      color: platformForm.color || null, is_archived: false
+      color: platformForm.color || null, is_archived: platformEditing?.is_archived ?? false,
+      is_system: platformEditing?.is_system ?? false,
+      system_key: platformEditing?.system_key ?? null
     };
     if (user && user.id !== "demo" && supabase) {
       if (platformEditing && platformEditing.name !== name) {
@@ -381,17 +391,41 @@ export default function Home() {
   }
 
   async function deletePlatform(platform: Platform) {
-    const count = prompts.filter(p=>p.platform===platform.name).length;
-    if (count > 0) {
-      if (!platform.is_archived) await archivePlatform(platform);
-      setPlatformError(`La piattaforma è utilizzata da ${count} prompt: è stata archiviata per conservarne i riferimenti.`);
-      return;
-    }
-    if (user && user.id !== "demo" && supabase) {
-      const {error} = await supabase.from("ai_platforms").delete().eq("id",platform.id);
-      if (error) { setPlatformError(error.message); return; }
-    }
-    setCustomPlatforms(prev=>prev.filter(p=>p.id!==platform.id));
+    if (platform.is_system) return;
+    const count = prompts.filter(p => p.platform === platform.name).length;
+    setConfirmDialog({
+      title: `Eliminare “${platform.name}”?`,
+      description: count > 0
+        ? `Sei sicuro di voler eliminare questa piattaforma? ${count} ${count === 1 ? "prompt associato verrà spostato" : "prompt associati verranno spostati"} nella piattaforma “Altro”. I prompt e i loro contenuti non verranno eliminati.`
+        : "Sei sicuro di voler eliminare questa piattaforma? L'operazione non può essere annullata.",
+      confirmLabel: "Sì, elimina piattaforma",
+      onConfirm: async () => {
+        if (user && user.id !== "demo" && supabase) {
+          if (count > 0) {
+            const { error: moveError } = await supabase.from("prompts")
+              .update({ platform: "Altro" })
+              .eq("user_id", user.id)
+              .eq("platform", platform.name);
+            if (moveError) {
+              setPlatformError(`Impossibile spostare i prompt in “Altro”: ${moveError.message}`);
+              setConfirmDialog(null);
+              return;
+            }
+          }
+          const { error: deleteError } = await supabase.from("ai_platforms")
+            .delete().eq("id", platform.id).eq("user_id", user.id);
+          if (deleteError) {
+            setPlatformError(`I prompt sono stati spostati in “Altro”, ma la piattaforma non è stata eliminata: ${deleteError.message}`);
+            setConfirmDialog(null);
+            return;
+          }
+        }
+        setPrompts(prev => prev.map(p => p.platform === platform.name ? { ...p, platform: "Altro" } : p));
+        setCustomPlatforms(prev => prev.filter(p => p.id !== platform.id));
+        setPlatformError("");
+        setConfirmDialog(null);
+      }
+    });
   }
 
   if(!authReady) return <div className="loading-screen"><div className="brand-mark"><Sparkles size={20}/></div><span>Promptory</span></div>;
@@ -414,45 +448,47 @@ export default function Home() {
         <button className="new-prompt-btn" onClick={openNew}><Plus size={17}/> Nuovo prompt <span>⌘ K</span></button>
         <div className="nav-label">WORKSPACE</div>
         <nav className="main-nav">
-          <button className={active==="all"?"active":""} onClick={()=>{setActive("all");setMobileNav(false)}}><LayoutDashboard size={18}/> Tutti i prompt <span className="nav-count">{prompts.length}</span></button>
-          <button className={active==="favorites"?"active":""} onClick={()=>{setActive("favorites");setMobileNav(false)}}><Star size={18}/> Preferiti <span className="nav-count">{prompts.filter(p=>p.is_favorite).length}</span></button>
-          <button className={active==="recent"?"active":""} onClick={()=>{setActive("recent");setMobileNav(false)}}><Clock3 size={18}/> Recenti</button>
+          <button className={active==="all"?"active":""} onClick={()=>{setPlatformManager(false);setActive("all");setCategory("Tutte");setMobileNav(false)}}><LayoutDashboard size={18}/> Tutti i prompt <span className="nav-count">{prompts.length}</span></button>
+          <button className={active==="favorites"?"active":""} onClick={()=>{setPlatformManager(false);setActive("favorites");setCategory("Tutte");setMobileNav(false)}}><Star size={18}/> Preferiti <span className="nav-count">{prompts.filter(p=>p.is_favorite).length}</span></button>
+          <button className={active==="recent"?"active":""} onClick={()=>{setPlatformManager(false);setActive("recent");setCategory("Tutte");setMobileNav(false)}}><Clock3 size={18}/> Recenti</button>
           <button className={platformManager?"active":""} onClick={()=>{setPlatformManager(true);setPlatformEditing(null);setPlatformError("");setMobileNav(false)}}><Bot size={18}/> Gestione piattaforme AI</button>
         </nav>
         <div className="nav-label category-label">CATEGORIE <button onClick={()=>{setCategoryManager(true);setCategoryError("")}}>+ Gestisci</button></div>
-        <nav className="category-nav">{categories.map((c,i)=><button key={c} className={category===c?"active":""} onClick={()=>{setCategory(category===c?"Tutte":c);setActive("all");setMobileNav(false)}}><span className={`category-dot dot-${i%5}`}/>{c}<span className="nav-count">{prompts.filter(p=>p.category===c).length||""}</span></button>)}</nav>
+        <nav className="category-nav">{categories.map((c,i)=><button key={c} className={category===c?"active":""} onClick={()=>{setPlatformManager(false);setCategory(category===c?"Tutte":c);setActive("all");setMobileNav(false)}}><span className={`category-dot dot-${i%5}`}/>{c}<span className="nav-count">{prompts.filter(p=>p.category===c).length||""}</span></button>)}</nav>
         <div className="sidebar-bottom"><div className="upgrade-card"><div className="upgrade-icon"><WandSparkles size={17}/></div><strong>La tua creatività, senza limiti.</strong><p>Una libreria ordinata è il primo passo per lavorare meglio con l'AI.</p><span>SPAZIO PERSONALE</span></div><div className="profile-row"><div className="avatar">{initials(user.email)}</div><div className="profile-info"><strong>{user.email?.split("@")[0]}</strong><span>Account personale</span></div><button className="icon-btn" onClick={signOut} title="Esci"><LogOut size={17}/></button></div></div>
       </aside>
       {mobileNav&&<div className="mobile-scrim" onClick={()=>setMobileNav(false)}/>}
       <section className="main-area">
-        <header className="topbar"><div className="top-left"><button className="icon-btn mobile-menu" onClick={()=>setMobileNav(true)}><Menu size={20}/></button><div className="breadcrumb">Workspace <span>/</span> <strong>{active==="favorites"?"Preferiti":active==="recent"?"Recenti":"Tutti i prompt"}</strong></div></div><div className="top-actions"><div className="theme-switch" title="Tema"><button className={theme==="light"?"selected":""} onClick={()=>setTheme("light")}><Sun size={15}/></button><button className={theme==="dark"?"selected":""} onClick={()=>setTheme("dark")}><Moon size={15}/></button><button className={theme==="system"?"selected":""} onClick={()=>setTheme("system")}><Monitor size={15}/></button></div><div className="menu-wrap profile-menu-wrap"><button className="top-avatar profile-avatar-button" aria-label="Apri menu account" aria-expanded={profileMenu} onClick={()=>setProfileMenu(v=>!v)}>{initials(user.email)}</button>{profileMenu&&<div className="dropdown-menu account-dropdown"><div className="account-dropdown-info"><strong>{user.email?.split("@")[0]}</strong><span>{user.email}</span></div><button onClick={()=>{setProfileMenu(false);setPlatformManager(true);}}><Bot size={14}/> Gestione piattaforme AI</button><button className="danger" onClick={signOut}><LogOut size={14}/> Esci dall'account</button></div>}</div></div></header>
+        <header className="topbar"><div className="top-left"><button className="icon-btn mobile-menu" onClick={()=>setMobileNav(true)}><Menu size={20}/></button><div className="breadcrumb">Workspace <span>/</span> <strong>{platformManager?"Gestione piattaforme AI":active==="favorites"?"Preferiti":active==="recent"?"Recenti":"Tutti i prompt"}</strong></div></div><div className="top-actions"><div className="theme-switch" title="Tema"><button className={theme==="light"?"selected":""} onClick={()=>setTheme("light")}><Sun size={15}/></button><button className={theme==="dark"?"selected":""} onClick={()=>setTheme("dark")}><Moon size={15}/></button><button className={theme==="system"?"selected":""} onClick={()=>setTheme("system")}><Monitor size={15}/></button></div><div className="menu-wrap profile-menu-wrap"><button className="top-avatar profile-avatar-button" aria-label="Apri menu account" aria-expanded={profileMenu} onClick={()=>setProfileMenu(v=>!v)}>{initials(user.email)}</button>{profileMenu&&<div className="dropdown-menu account-dropdown"><div className="account-dropdown-info"><strong>{user.email?.split("@")[0]}</strong><span>{user.email}</span></div><button className="danger" onClick={signOut}><LogOut size={14}/> Esci dall'account</button></div>}</div></div></header>
         {platformManager ? (
           <div className="content-wrap">
             <div className="welcome-row platform-page-heading">
-              <div><div className="eyebrow">PERSONALIZZA IL WORKSPACE</div><h1>Gestione piattaforme AI</h1><p className="muted">Organizza gli strumenti AI che utilizzi. Le piattaforme predefinite non possono essere modificate.</p></div>
+              <div><div className="eyebrow">PERSONALIZZA IL WORKSPACE</div><h1>Gestione piattaforme AI</h1><p className="muted">Organizza e personalizza gli strumenti AI che utilizzi. Anche le piattaforme incluse sono modificabili, ad eccezione di Altro.</p></div>
               <button className="primary-btn" onClick={openNewPlatform}><Plus size={17}/> Nuova piattaforma</button>
             </div>
             <div className="platform-manager-toolbar"><div className="search-box"><Search size={17}/><input placeholder="Cerca una piattaforma..." value={platformSearch} onChange={e=>setPlatformSearch(e.target.value)}/></div><button className="secondary-btn" onClick={()=>setPlatformManager(false)}>Torna alla libreria</button></div>
             {platformError&&<div className="platform-notice">{platformError}</div>}
-            {platformFormOpen ? (
-              <form className="prompt-modal platform-edit-form" onSubmit={savePlatform}>
-                <div className="modal-header"><div><div className="eyebrow">{platformEditing?"MODIFICA PIATTAFORMA":"NUOVA PIATTAFORMA"}</div><h2>{platformEditing?"Modifica piattaforma":"Aggiungi una piattaforma AI"}</h2></div><button className="icon-btn" type="button" onClick={()=>{setPlatformEditing(null);setPlatformFormOpen(false);setPlatformForm({name:"",description:"",url:"",icon:"",color:"#6558e8"});setPlatformError("")}}><X size={18}/></button></div>
-                <div className="form-two"><label>Nome *<input required maxLength={50} value={platformForm.name} onChange={e=>setPlatformForm({...platformForm,name:e.target.value})} placeholder="Es. Perplexity"/></label><label>Icona / emoji<input maxLength={8} value={platformForm.icon} onChange={e=>setPlatformForm({...platformForm,icon:e.target.value})} placeholder="Es. ✨"/></label></div>
-                <label>Descrizione<input value={platformForm.description} onChange={e=>setPlatformForm({...platformForm,description:e.target.value})} placeholder="A cosa serve questa piattaforma?"/></label>
-                <div className="form-two"><label>URL<input type="url" value={platformForm.url} onChange={e=>setPlatformForm({...platformForm,url:e.target.value})} placeholder="https://..."/></label><label>Colore<input type="color" className="platform-color-input" value={platformForm.color} onChange={e=>setPlatformForm({...platformForm,color:e.target.value})}/></label></div>
-                {platformError&&<div className="error-text">{platformError}</div>}
-                <div className="modal-actions"><button className="secondary-btn" type="button" onClick={()=>{setPlatformEditing(null);setPlatformFormOpen(false);setPlatformForm({name:"",description:"",url:"",icon:"",color:"#6558e8"})}}>Annulla</button><button className="primary-btn" disabled={platformBusy} type="submit">{platformBusy?"Salvataggio…":"Salva piattaforma"} <ArrowUpRight size={16}/></button></div>
-              </form>
-            ) : null}
-            <div className="platform-section-title"><h2>Piattaforme disponibili</h2><span>{systemPlatforms.length+customPlatforms.filter(p=>!p.is_archived).length} strumenti</span></div>
+            {platformFormOpen && (
+              <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget&&!platformBusy){setPlatformEditing(null);setPlatformFormOpen(false);setPlatformError("")}}}>
+                <form className="prompt-modal platform-edit-form" onSubmit={savePlatform}>
+                  <div className="modal-header"><div><div className="eyebrow">{platformEditing?"MODIFICA PIATTAFORMA":"NUOVA PIATTAFORMA"}</div><h2>{platformEditing?"Modifica piattaforma":"Aggiungi una piattaforma AI"}</h2></div><button className="icon-btn" type="button" aria-label="Chiudi" disabled={platformBusy} onClick={()=>{setPlatformEditing(null);setPlatformFormOpen(false);setPlatformForm({name:"",description:"",url:"",icon:"",color:"#6558e8"});setPlatformError("")}}><X size={18}/></button></div>
+                  <div className="form-two"><label>Nome *<input autoFocus required maxLength={50} value={platformForm.name} onChange={e=>setPlatformForm({...platformForm,name:e.target.value})} placeholder="Es. Perplexity"/></label><label>Icona / emoji<input maxLength={8} value={platformForm.icon} onChange={e=>setPlatformForm({...platformForm,icon:e.target.value})} placeholder="Es. ✨"/></label></div>
+                  <label>Descrizione<input value={platformForm.description} onChange={e=>setPlatformForm({...platformForm,description:e.target.value})} placeholder="A cosa serve questa piattaforma?"/></label>
+                  <div className="form-two"><label>URL<input type="url" value={platformForm.url} onChange={e=>setPlatformForm({...platformForm,url:e.target.value})} placeholder="https://..."/><span className="field-hint">Link ufficiale della piattaforma, utilizzato per aprirla dalla relativa card.</span></label><label>Colore<input type="color" className="platform-color-input" value={platformForm.color} onChange={e=>setPlatformForm({...platformForm,color:e.target.value})}/></label></div>
+                  {platformError&&<div className="error-text">{platformError}</div>}
+                  <div className="modal-actions"><button className="secondary-btn" type="button" disabled={platformBusy} onClick={()=>{setPlatformEditing(null);setPlatformFormOpen(false);setPlatformForm({name:"",description:"",url:"",icon:"",color:"#6558e8"});setPlatformError("")}}>Annulla</button><button className="primary-btn" disabled={platformBusy} type="submit">{platformBusy?"Salvataggio…":"Salva piattaforma"} <ArrowUpRight size={16}/></button></div>
+                </form>
+              </div>
+            )}
+            <div className="platform-section-title"><h2>Piattaforme disponibili</h2><span>{(customPlatforms.length ? customPlatforms : systemPlatformDefaults).filter(p=>!p.is_archived).length} strumenti</span></div>
             <div className="platform-grid">
-              {[...systemPlatforms,...customPlatforms].filter(p=>`${p.name} ${p.description||""}`.toLowerCase().includes(platformSearch.toLowerCase()) ).map(platform=>{
+              {(customPlatforms.length ? customPlatforms : systemPlatformDefaults).filter(p=>`${p.name} ${p.description||""}`.toLowerCase().includes(platformSearch.toLowerCase()) ).map(platform=>{
                 const used=prompts.filter(p=>p.platform===platform.name).length;
                 return <article className={`platform-card ${platform.is_archived?"is-archived":""}`} key={platform.id}>
                   <div className="platform-card-top"><div className="platform-logo" style={{background:platform.color?`${platform.color}18`:undefined,color:platform.color||undefined}}>{platform.icon||<Bot size={20}/>}</div><div className="platform-card-badges">{platform.is_system&&<span>PREDEFINITA</span>}{platform.is_archived&&<span>ARCHIVIATA</span>}</div></div>
                   <h3>{platform.name}</h3><p>{platform.description|| (platform.is_system?"Piattaforma inclusa in Promptory":"Nessuna descrizione")}</p>
-                  <div className="platform-card-footer"><span>{used} {used===1?"prompt":"prompt"}</span>{platform.url&&<a href={platform.url} target="_blank" rel="noreferrer" aria-label={`Apri ${platform.name}`}><ExternalLink size={14}/></a>}</div>
-                  {!platform.is_system&&<div className="platform-card-actions"><button className="icon-btn" title="Modifica" onClick={()=>openEditPlatform(platform)}><Pencil size={15}/></button><button className="icon-btn" title={platform.is_archived?"Riattiva":"Archivia"} onClick={()=>archivePlatform(platform)}>{platform.is_archived?<RotateCcw size={15}/>:<Archive size={15}/>}</button><button className="icon-btn category-delete" title="Elimina" onClick={()=>deletePlatform(platform)}><Trash2 size={15}/></button></div>}
+                  <div className="platform-card-footer"><span>{used} {used===1?"prompt":"prompt"}</span>{platform.name !== "Altro" && platform.url&&<a href={platform.url} target="_blank" rel="noreferrer" aria-label={`Apri ${platform.name}`}><ExternalLink size={14}/></a>}</div>
+                  {platform.system_key !== "altro" && <div className="platform-card-actions"><button className="icon-btn" title="Modifica" onClick={()=>openEditPlatform(platform)}><Pencil size={15}/></button>{!platform.is_system&&<><button className="icon-btn" title={platform.is_archived?"Riattiva":"Archivia"} onClick={()=>archivePlatform(platform)}>{platform.is_archived?<RotateCcw size={15}/>:<Archive size={15}/>}</button><button className="icon-btn category-delete" title="Elimina" onClick={()=>deletePlatform(platform)}><Trash2 size={15}/></button></>}</div>}
                 </article>
               })}
             </div>
