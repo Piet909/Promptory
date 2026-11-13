@@ -37,3 +37,43 @@
 .danger-btn:disabled,.confirm-actions button:disabled{opacity:.6;cursor:wait}
 @keyframes confirm-enter{from{opacity:0;transform:translateY(7px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(max-width:520px){.confirm-modal{padding:23px 19px;border-radius:14px}.confirm-modal h2{font-size:18px}.confirm-actions{display:grid;grid-template-columns:1fr 1fr}.confirm-actions button{width:100%;min-height:42px}}
+
+
+/* Account menu and AI platform manager */
+.profile-menu-wrap{position:relative}
+.profile-avatar-button{border:0;cursor:pointer;padding:0;display:grid;place-items:center}
+.profile-avatar-button:hover{box-shadow:0 0 0 3px var(--accent-2)}
+.account-dropdown{width:225px;top:39px;padding:7px}
+.account-dropdown-info{display:grid;gap:4px;padding:9px 9px 11px;margin-bottom:4px;border-bottom:1px solid var(--line)}
+.account-dropdown-info strong{font-size:12px;color:var(--text)}
+.account-dropdown-info span{font-size:10px;color:var(--muted);overflow-wrap:anywhere}
+.account-dropdown button{font-size:11px;padding:9px}
+.account-dropdown button svg{color:var(--muted)}
+.platform-manager-toolbar{display:flex;gap:10px;margin:27px 0 23px}
+.platform-manager-toolbar .search-box{max-width:560px}
+.platform-notice{padding:11px 13px;margin:0 0 17px;border-radius:8px;background:var(--accent-2);color:var(--accent);font-size:11px;line-height:1.55}
+.platform-section-title{display:flex;align-items:center;gap:10px;margin:28px 0 14px}
+.platform-section-title h2{font:700 15px Manrope;margin:0}
+.platform-section-title span{font-size:10px;color:var(--muted)}
+.platform-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}
+.platform-card{position:relative;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:16px;transition:.2s}
+.platform-card:hover{border-color:color-mix(in srgb,var(--accent) 38%,var(--line));box-shadow:var(--shadow);transform:translateY(-1px)}
+.platform-card.is-archived{opacity:.66}
+.platform-card-top{display:flex;align-items:center;justify-content:space-between}
+.platform-logo{width:39px;height:39px;border-radius:10px;display:grid;place-items:center;background:var(--accent-2);color:var(--accent);font-size:20px;font-weight:700}
+.platform-card-badges{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.platform-card-badges span{font-size:8px;letter-spacing:.7px;color:var(--muted);background:var(--surface-2);border-radius:4px;padding:4px 6px}
+.platform-card h3{font:700 14px Manrope;margin:14px 0 5px}
+.platform-card>p{font-size:10px;line-height:1.55;color:var(--muted);min-height:31px;margin:0 0 12px}
+.platform-card-footer{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:10px;font-size:9px;color:var(--muted)}
+.platform-card-footer a{display:grid;place-items:center;color:var(--muted);padding:4px}
+.platform-card-footer a:hover{color:var(--accent)}
+.platform-card-actions{display:flex;justify-content:flex-end;gap:3px;margin-top:6px}
+.platform-edit-form{width:min(650px,100%);margin:20px 0;padding:21px;box-shadow:var(--shadow)}
+.platform-edit-form .modal-header{margin-bottom:18px}
+.platform-edit-form .modal-header h2{font-size:17px}
+.platform-edit-form label{display:grid;gap:7px;font-size:11px;font-weight:600}
+.platform-edit-form input:not([type=color]){width:100%;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:8px;padding:10px 11px;font-size:12px}
+.platform-color-input{width:100%;height:38px;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:4px}
+@media(max-width:1100px){.platform-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.platform-manager-toolbar{flex-direction:column}.platform-manager-toolbar .search-box{max-width:none;min-height:42px}.platform-manager-toolbar>.secondary-btn{min-height:40px}.platform-grid{grid-template-columns:1fr}.platform-page-heading{align-items:flex-start}.platform-page-heading>.primary-btn{font-size:0;padding:10px}.platform-page-heading>.primary-btn svg{width:18px;height:18px}.platform-edit-form{padding:17px}.account-dropdown{right:-4px}}
